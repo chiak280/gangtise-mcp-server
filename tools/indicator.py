@@ -9,9 +9,10 @@ from gangtise_client import GangtiseClient
 INDICATOR_TOOL = Tool(
     name="gangtise_indicator",
     description=(
-        "查询经济指标、行业指标、公司财务/销量等结构化数据。\n"
-        "适合场景：查询宏观经济数据、行业市场规模、公司营收/利润/出货量等指标。\n"
-        "示例：'2024年中国光模块出货量'、'比亚迪2024年销售数据'、'全球半导体设备市场规模趋势'"
+        "查询宏观经济指标和行业市场指标的结构化数据。\n"
+        "✅ 支持：宏观指标（GDP、CPI、PMI、M2、利率）、行业指标（市场规模、产能、销量、价格指数）。\n"
+        "❌ 不支持：A股个股财务数据（营收/净利润/毛利率等）——个股财务请改用 gangtise_knowledge_search 查研报/年报。\n"
+        "示例：'中国半导体设备市场规模2022-2024'、'全球光模块出货量'、'中国GDP增速'"
     ),
     inputSchema={
         "type": "object",

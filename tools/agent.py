@@ -7,11 +7,12 @@ from mcp.types import TextContent, Tool
 from gangtise_client import GangtiseClient, AGENT_MAP, RESOURCE_TYPE_MAP
 
 _AGENT_TYPES_HINT = "\n".join([
-    "- searcher / 数据搜索：搜索相关数据和信息",
-    "- industry_expert / 产业链分析：深度产业链研究",
-    "- investment_logic / 投资逻辑：分析公司或行业投资逻辑",
-    "- investigation_outline / 调研提纲：生成调研框架",
-    "- theme_daily_report / 主题晨报：生成主题赛道每日报告",
+    "- searcher / 数据搜索：搜索公司最新数据（订单/业绩/公告），问题格式：'公司名+简短查询'，如'长川科技最新订单'",
+    "- investment_logic / 投资逻辑：生成公司投资逻辑，问题格式：直接输入公司名，如'长川科技'",
+    "- investigation_outline / 调研提纲：生成公司调研提纲，问题格式：直接输入公司名，如'长川科技'",
+    "- industry_expert / 产业链分析：生成公司产业链全景报告（上游供应商→公司→下游客户+涉及公司名单），问题格式必须是'具体公司名产业链'，如'长川科技产业链'。耗时约250s。⚠️ 不能用宽泛词（如'半导体'），会因资料过多而失败",
+    "- theme_daily_report / 主题晨报：生成赛道每日报告，问题格式：'赛道名'，如'光通信'",
+    "- 不填：平台自动选择 deep_researcher，适合综合分析类问题",
 ])
 
 _RESOURCE_TYPES_HINT = "、".join(RESOURCE_TYPE_MAP.keys())
@@ -33,9 +34,10 @@ DEEP_RESEARCH_TOOL = Tool(
     name="gangtise_deep_research",
     description=(
         "调用 Gangtise Agent 进行深度研究分析。\n"
+        "⚠️ 重要：此工具响应时间为 3-5 分钟，仅适合需要深度综合分析的场景，轻量查询请优先用 gangtise_knowledge_batch。\n"
         "支持以下 Agent 类型：\n"
         f"{_AGENT_TYPES_HINT}\n\n"
-        "适合场景：研究行业产业链（如光通信）、分析公司投资逻辑、生成调研提纲、每日主题报告。"
+        "关键：各Agent对问题长度敏感，必须用简短聚焦的问题，复杂长问题会导致Agent报错。"
     ),
     inputSchema={
         "type": "object",

@@ -27,13 +27,13 @@ RETRY_BACKOFF = [1, 3, 5]  # 重试等待秒数
 
 # 资源类型中文到编码的映射
 RESOURCE_TYPE_MAP: dict[str, int] = {
-    "券商研报": 10,
+    "券商研究报告": 10,
     "内部研究报告": 20,
-    "分析师观点": 40,
+    "首席分析师观点": 40,
     "公司公告": 50,
-    "会议纪要": 60,
-    "调研纪要": 70,
-    "网络资源": 80,
+    "会议平台纪要": 60,
+    "调研纪要公告": 70,
+    "网络资源纪要": 80,
     "产业公众号": 90,
 }
 
@@ -174,7 +174,7 @@ class GangtiseClient:
     async def search_knowledge(
         self,
         query: str,
-        top: int = 10,
+        top: int = 20,
         resource_types: Optional[list[str]] = None,
         days: Optional[int] = None,
     ) -> list[dict]:
@@ -184,7 +184,7 @@ class GangtiseClient:
         start_time, end_time = _days_to_timestamps(days)
         payload: dict = {
             "query": query,
-            "top": min(top, 20),
+            "top": min(top, 20),  # API 最大限制 20
             "knowledgeNames": DEFAULT_KNOWLEDGE_NAMES,
         }
         if resource_types:
@@ -204,7 +204,7 @@ class GangtiseClient:
     async def search_knowledge_batch(
         self,
         queries: list[str],
-        top: int = 10,
+        top: int = 20,
         resource_types: Optional[list[str]] = None,
         days: Optional[int] = None,
     ) -> list[dict]:
@@ -236,19 +236,34 @@ class GangtiseClient:
             raise RuntimeError(f"批量知识库查询失败: {data.get('msg')}")
         return data.get("data") or []
 
-    async def query_indicator(self, text: str) -> str:
-        """指标查询 Agent（非流式，等待完整返回）"""
+    async def query_indicator(self, text: str, timeout: int = 60) -> str:
+        """指标查询 Agent（非流式，等待完整返回，最长等待 timeout 秒）"""
         url = f"{BASE_URL}/application/open-ai/ai/search/indicator"
         payload = {"text": text, "stream": False}
 
-        data = await self._post_with_retry(url, payload)
-        # 兼容 OpenAI 格式返回
-        if "choices" in data:
-            return data["choices"][0]["message"]["content"]
-        # 直接业务格式
-        if data.get("code") == "000000":
-            return data.get("data", "")
-        raise RuntimeError(f"指标查询失败: {data}")
+        try:
+            data = await asyncio.wait_for(self._post_with_retry(url, payload), timeout=timeout)
+        except asyncio.TimeoutError:
+            raise RuntimeError(f"指标查询超时（>{timeout}s），请稍后重试或换用知识库检索")
+
+        # 实际响应结构：{code: "000000", data: {choices: [{finish_reason, message: {content, reasoning_content}}]}}
+        # 外层 envelope 解包
+        if data.get("code") == "000000" and isinstance(data.get("data"), dict):
+            inner = data["data"]
+        else:
+            inner = data  # 兼容直接返回 OpenAI 格式（无 envelope）
+
+        if "choices" in inner:
+            choice = inner["choices"][0]
+            content = choice["message"]["content"]
+            finish_reason = choice.get("finish_reason", "stop")
+            if finish_reason == "failed":
+                raise RuntimeError(f"指标数据未找到（仅支持宏观/行业指标，不支持A股个股财务数据）：{content}")
+            return content
+
+        if data.get("code") != "000000":
+            raise RuntimeError(f"指标查询失败: {data.get('msg', data)}")
+        return str(data.get("data", ""))
 
     async def deep_research(
         self,
@@ -257,10 +272,12 @@ class GangtiseClient:
         group_id: Optional[int] = None,
         web_enable: bool = True,
         include_types: Optional[list[str]] = None,
+        timeout: int = 300,
     ) -> tuple[str, str]:
         """
         深度研究 Agent（SSE 流式，收集后返回）
         返回: (思考过程, 最终回答)
+        注意：实测耗时 3-5 分钟，timeout 默认 300s
         """
         session = await self._get_session()
         url = f"{BASE_URL}/application/open-ai/ai/chat/sse"
@@ -293,30 +310,42 @@ class GangtiseClient:
         think_parts: list[str] = []
         answer_parts: list[str] = []
 
-        async with session.post(url, headers=await self._auth_headers(), json=payload) as resp:
-            resp.raise_for_status()
-            async for raw_line in resp.content:
-                line = raw_line.decode("utf-8").strip()
-                if not line.startswith("data:"):
-                    continue
-                json_str = line[5:].strip()
-                if not json_str or json_str == "[DONE]":
-                    continue
-                try:
-                    event = json.loads(json_str)
-                except json.JSONDecodeError:
-                    continue
+        try:
+            async with asyncio.timeout(timeout):
+                async with session.post(url, headers=await self._auth_headers(), json=payload) as resp:
+                    resp.raise_for_status()
+                    async for raw_line in resp.content:
+                        line = raw_line.decode("utf-8").strip()
+                        if not line.startswith("data:"):
+                            continue
+                        json_str = line[5:].strip()
+                        if not json_str or json_str == "[DONE]":
+                            continue
+                        try:
+                            event = json.loads(json_str)
+                        except json.JSONDecodeError:
+                            continue
 
-                phase = event.get("phase", "")
-                delta = ""
-                result = event.get("result", {})
-                if isinstance(result, dict):
-                    delta = result.get("delta", "")
+                        phase = event.get("phase", "")
+                        delta = ""
+                        result = event.get("result", {})
+                        if isinstance(result, dict):
+                            delta = result.get("delta", "")
 
-                if phase == "think" and delta:
-                    think_parts.append(delta)
-                elif phase == "answer" and delta:
-                    answer_parts.append(delta)
+                        if phase == "think" and delta:
+                            think_parts.append(delta)
+                        elif phase == "answer" and delta:
+                            answer_parts.append(delta)
+        except asyncio.TimeoutError:
+            answer_text = "".join(answer_parts)
+            if answer_text:
+                # 超时但已有部分回答，返回已收到的内容
+                return "".join(think_parts), answer_text + "\n\n⚠️ [响应超时，以上为已接收的部分内容]"
+            raise RuntimeError(
+                f"深度研究超时（>{timeout}s）。此工具单次调用需 3-5 分钟，"
+                "如 Claude Desktop 显示超时错误属正常现象。"
+                "建议改用 gangtise_knowledge_batch 进行快速知识库检索。"
+            )
 
         think_text = "".join(think_parts)
         answer_text = "".join(answer_parts)

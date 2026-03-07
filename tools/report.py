@@ -70,8 +70,8 @@ async def _generate_sector_report(
         try:
             results = await client.search_knowledge(
                 query=broker_query,
-                top=5,
-                resource_types=["券商研报", "分析师观点"],
+                top=20,
+                resource_types=["券商研究报告", "首席分析师观点"],
                 days=days,
             )
             if not results:

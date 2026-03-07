@@ -28,8 +28,8 @@ KNOWLEDGE_SEARCH_TOOL = Tool(
             },
             "top": {
                 "type": "integer",
-                "description": "返回条数，默认10，最大20",
-                "default": 10,
+                "description": "返回条数，默认20，最大20",
+                "default": 20,
             },
             "days": {
                 "type": "integer",
@@ -61,8 +61,8 @@ KNOWLEDGE_BATCH_TOOL = Tool(
             },
             "top": {
                 "type": "integer",
-                "description": "每个问题返回条数，默认5，最大20",
-                "default": 5,
+                "description": "每个问题返回条数，默认20，最大20",
+                "default": 20,
             },
             "days": {
                 "type": "integer",
@@ -110,7 +110,7 @@ async def handle_knowledge_search(
     client: GangtiseClient, arguments: dict[str, Any]
 ) -> list[TextContent]:
     query = arguments["query"]
-    top = min(arguments.get("top", 10), 20)
+    top = min(arguments.get("top", 20), 20)
     resource_types = arguments.get("resource_types")
     days = arguments.get("days")
 
@@ -129,7 +129,7 @@ async def handle_knowledge_batch(
     if len(queries) > 5:
         queries = queries[:5]
 
-    top = min(arguments.get("top", 5), 20)
+    top = min(arguments.get("top", 20), 20)
     resource_types = arguments.get("resource_types")
     days = arguments.get("days")
 
